@@ -1,0 +1,9 @@
+-- Gere o hash com: php -r "echo password_hash('SUA_PASSWORD', PASSWORD_DEFAULT), PHP_EOL;"
+START TRANSACTION;
+INSERT INTO tenants(name,slug,status) VALUES ('AGRO Smart Demo','agro-smart-demo','active');
+SET @tenant_id=LAST_INSERT_ID();
+INSERT INTO users(tenant_id,name,email,password_hash,role,status) VALUES(@tenant_id,'Administrador','admin@seudominio.co.mz','HASH_GERADO','owner','active');
+INSERT INTO farms(tenant_id,name,province,district) VALUES(@tenant_id,'Exploração de demonstração','Maputo','Boane');
+SET @farm_id=LAST_INSERT_ID();
+INSERT INTO subscriptions(tenant_id,plan_id,status,starts_at) SELECT @tenant_id,id,'active',NOW() FROM plans WHERE code='basic';
+COMMIT;
