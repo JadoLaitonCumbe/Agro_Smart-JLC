@@ -1,0 +1,1 @@
+<?php require '../../config/bootstrap.php';try{db()->query('SELECT 1');json_response(['status'=>'ok','app'=>envv('APP_NAME','AGRO Smart'),'time'=>date('c')]);}catch(Throwable $e){json_response(['status'=>'error'],503);}
