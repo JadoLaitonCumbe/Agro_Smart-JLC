@@ -1,0 +1,18 @@
+<?php
+declare(strict_types=1);
+$root=dirname(__DIR__);
+if(is_file($root.'/.env')){foreach(file($root.'/.env',FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES) as $line){$line=trim($line);if($line===''||str_starts_with($line,'#')||!str_contains($line,'='))continue;[$k,$v]=explode('=',$line,2);$v=trim($v);if(strlen($v)>=2&&(($v[0]==='"'&&$v[-1]==='"')||($v[0]==="'"&&$v[-1]==="'")))$v=substr($v,1,-1);$_ENV[trim($k)]=$v;}}
+date_default_timezone_set($_ENV['APP_TIMEZONE']??'Africa/Maputo');
+function envv(string $k,?string $d=null):?string{return $_ENV[$k]??$d;}
+function db():PDO{static $p;if($p instanceof PDO)return $p;$p=new PDO(sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',envv('DB_HOST','127.0.0.1'),envv('DB_PORT','3306'),envv('DB_DATABASE','agro_smart')),envv('DB_USERNAME',''),envv('DB_PASSWORD',''),[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_EMULATE_PREPARES=>false]);return $p;}
+function json_response(array $d,int $s=200):never{http_response_code($s);header('Content-Type: application/json; charset=utf-8');header('Cache-Control: no-store');echo json_encode($d,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);exit;}
+function request_json():array{$d=json_decode(file_get_contents('php://input')?:'',true);return is_array($d)?$d:[];}
+function start_secure_session():void{if(session_status()===PHP_SESSION_ACTIVE)return;session_name('AGROSMARTSESSID');session_set_cookie_params(['lifetime'=>0,'path'=>'/','secure'=>filter_var(envv('SESSION_SECURE','true'),FILTER_VALIDATE_BOOLEAN),'httponly'=>true,'samesite'=>'Lax']);session_start();}
+function csrf_token():string{start_secure_session();if(empty($_SESSION['csrf']))$_SESSION['csrf']=bin2hex(random_bytes(32));return $_SESSION['csrf'];}
+function require_csrf():void{start_secure_session();$s=$_SERVER['HTTP_X_CSRF_TOKEN']??'';if(!$s||!hash_equals($_SESSION['csrf']??'',$s))json_response(['error'=>'Token CSRF inválido'],419);}
+function require_auth():array{start_secure_session();if(empty($_SESSION['user_id'])||empty($_SESSION['tenant_id']))json_response(['error'=>'Não autenticado'],401);return ['id'=>(int)$_SESSION['user_id'],'tenant_id'=>(int)$_SESSION['tenant_id'],'name'=>(string)($_SESSION['name']??''),'role'=>(string)($_SESSION['role']??'viewer')];}
+function require_role(array $u,array $roles):void{if(!in_array($u['role'],$roles,true))json_response(['error'=>'Sem permissões'],403);}
+function audit(array $u,string $action,string $entity,?int $entityId=null,array $meta=[]):void{try{$s=db()->prepare('INSERT INTO audit_logs(tenant_id,user_id,action,entity,entity_id,ip_address,meta) VALUES(?,?,?,?,?,?,?)');$s->execute([$u['tenant_id'],$u['id'],$action,$entity,$entityId,$_SERVER['REMOTE_ADDR']??null,json_encode($meta,JSON_UNESCAPED_UNICODE)]);}catch(Throwable $e){error_log($e->getMessage());}}
+function log_error(Throwable $e):void{@file_put_contents(dirname(__DIR__).'/storage/logs/app.log',date('c').' '.get_class($e).': '.$e->getMessage().PHP_EOL,FILE_APPEND);}
+function rate_limit(string $bucket,int $limit=60,int $window=60):void{if(envv('APP_ENV','production')==='testing')return;$key=hash('sha256',$bucket.'|'.($_SERVER['REMOTE_ADDR']??'unknown'));$dir=dirname(__DIR__).'/storage/ratelimit';if(!is_dir($dir))@mkdir($dir,0700,true);$f=$dir.'/'.$key.'.json';$now=time();$d=is_file($f)?json_decode(file_get_contents($f),true):[];$d=array_filter($d??[],fn($t)=>$t>$now-$window);if(count($d)>=$limit)json_response(['error'=>'Muitas solicitações. Tente novamente.'],429);$d[]=$now;@file_put_contents($f,json_encode(array_values($d)),LOCK_EX);}
+function paginate():array{$page=max(1,(int)($_GET['page']??1));$per=min(100,max(1,(int)($_GET['per_page']??25)));return [$page,$per,($page-1)*$per];}
