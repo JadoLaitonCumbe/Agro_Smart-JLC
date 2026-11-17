@@ -1,0 +1,1 @@
+<?php require '../../../config/bootstrap.php';$u=require_auth();require_csrf();audit($u,'logout','user',$u['id']);$_SESSION=[];if(ini_get('session.use_cookies')){setcookie(session_name(),'',['expires'=>time()-42000,'path'=>'/']);}session_destroy();json_response(['ok'=>true]);
